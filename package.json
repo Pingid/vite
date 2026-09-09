@@ -1,0 +1,94 @@
+{
+  "name": "@pingid/vite",
+  "version": "0.0.0-dev.1",
+  "description": "Tooling for Vite",
+  "author": "Dan Beaven <dm.beaven@gmail.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/Pingid/vite#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Pingid/vite.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Pingid/vite/issues"
+  },
+  "type": "module",
+  "main": "dist/plugin.js",
+  "module": "dist/plugin.js",
+  "types": "dist/plugin.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/plugin.d.ts",
+      "import": "./dist/plugin.js",
+      "ts": "./src/plugin.ts"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js",
+      "ts": "./src/client.ts"
+    },
+    "./iife": {
+      "types": "./dist/iife/client.d.ts",
+      "import": "./dist/iife/client.js",
+      "ts": "./src/iife/client.ts"
+    },
+    "./sw": {
+      "types": "./dist/sw/index.d.ts",
+      "import": "./dist/sw/index.js",
+      "ts": "./src/sw/index.ts"
+    },
+    "./sw/worker": {
+      "types": "./dist/sw/worker.d.ts",
+      "import": "./dist/sw/worker.js",
+      "ts": "./src/sw/worker.ts"
+    },
+    "./sw/client": {
+      "types": "./dist/sw/client.d.ts",
+      "import": "./dist/sw/client.js",
+      "ts": "./src/sw/client.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "vite",
+    "tooling"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "format": "prettier --write .",
+    "prepublishOnly": "pnpm build"
+  },
+  "dependencies": {
+    "@babel/parser": "^8.0.4",
+    "@babel/traverse": "^8.0.4",
+    "esbuild": "^0.28.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "prettier": "^3.9.6",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2"
+  },
+  "peerDependencies": {
+    "vite": "^3.0.0 || ^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0 || ^9.0.0"
+  },
+  "prettier": {
+    "semi": false,
+    "singleQuote": true,
+    "printWidth": 120,
+    "trailingComma": "all"
+  }
+}
