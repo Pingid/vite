@@ -1,7 +1,6 @@
 /// <reference lib="webworker" />
 
-import { runner as iifeRunner } from '../iife/client.ts'
-import { getOr } from '../_util/shared.ts'
+export { $hot } from '../iife/client.ts'
 
 declare const self: ServiceWorkerGlobalScope
 
@@ -280,24 +279,9 @@ const report = (error: unknown): void => {
   })
 }
 
-export const runner = <Mod extends Record<string, any>>(c: Cx, cb: (x: Mod) => () => void) => {
-  const r = iifeRunner<Mod>(cb)
-  const off = c.on('message', (event) => r.msg(event.data))
-  const dispose = () => {
-    off()
-    r.dispose()
-  }
-  return { ...r, dispose }
-}
-
-/** hot(import(module)) */
-export const hot = <M extends Promise<Record<string, any>>>(c: Cx, m: M, cb: (m: Awaited<M>) => () => void) => {
-  const r = iifeRunner(cb)
-  m.then((c) => r.run(c as any))
-  const off = c.on('message', (event) => r.msg(event.data))
-  const dispose = () => {
-    off()
-    r.dispose()
-  }
-  return { ...r, dispose }
+export const getOr = <T, K = PropertyKey>(obj: Map<K, T>, key: K, defaultValue: () => T): T => {
+  if (obj.has(key)) return obj.get(key)!
+  const newValue = defaultValue()
+  obj.set(key, newValue)
+  return newValue
 }

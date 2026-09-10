@@ -1,10 +1,3 @@
-export const getOr = <T, K = PropertyKey>(obj: Map<K, T>, key: K, defaultValue: () => T): T => {
-  if (obj.has(key)) return obj.get(key)!
-  const newValue = defaultValue()
-  obj.set(key, newValue)
-  return newValue
-}
-
 export const emitter = <T extends Record<string, unknown>>() => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const listeners = new Map<keyof T, Set<(event: any) => void>>()

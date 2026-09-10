@@ -1,5 +1,4 @@
 import { emitter } from '../_util/shared.ts'
-import { propogateHotUpdates } from '../iife/client.ts'
 
 export type RegistrationEventMap = {
   statechange: ServiceWorkerState
@@ -67,14 +66,6 @@ export class Sw {
   constructor(registration: Promise<ServiceWorkerRegistration> | ServiceWorkerRegistration) {
     this._registration = Promise.resolve(registration)
     void this.observe()
-
-    // Propogate hot updates to the service worker
-    propogateHotUpdates({
-      send: (data) => {
-        if (this.state() !== 'activated') return console.warn(`no yet active`)
-        this.registration?.active?.postMessage(data)
-      },
-    })
   }
 
   on<K extends keyof RegistrationEventMap>(type: K, listener: (event: RegistrationEventMap[K]) => void): () => void {
