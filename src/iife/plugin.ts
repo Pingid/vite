@@ -1,9 +1,10 @@
 import type { ModuleNode, Plugin, ViteDevServer } from 'vite'
+import { mergeConfig } from 'vite'
 
 import type * as esbuild from 'esbuild'
 
-import { isDepOf, resolveVirtualUrl } from '../_util/vite.ts'
 import { bundler, CONST, Strategy } from './build/index.ts'
+import { isDepOf, virtual } from '../_util/vite.ts'
 
 export type IifeOptions = {
   entry: string
@@ -14,8 +15,8 @@ export type IifeOptions = {
 const SSE_URL = '/__hot_sse__'
 
 export const iife = (p: IifeOptions) => {
-  const virtualEntryId = 'virtual:dynamic-entry'
-  const resolvedVirtualEntryId = '\0' + virtualEntryId
+  const dependencies = virtual('dependencies')
+  // const notify = virtual('notify')
 
   const listeners: Set<(data: any) => void> = new Set()
   const emit = (data: any) => {
@@ -43,10 +44,7 @@ export const iife = (p: IifeOptions) => {
   let tracking: string[] = []
   const tracks = serial(async (server: ViteDevServer) => {
     tracking = strategy.imported()
-    const url = await resolveVirtualUrl(server, virtualEntryId)
-    if (!url) return
-    await server.transformRequest(url)
-    console.timeEnd('tracks')
+    await server.transformRequest(dependencies.url)
   })
 
   const entry = memoTtl(4_000, (server: ViteDevServer, pth: string) =>
@@ -58,7 +56,7 @@ export const iife = (p: IifeOptions) => {
     let i = 0
     for (const imp of tracking) {
       code += `import * as imp${i} from '${imp}';\n`
-      code += `void imp${i}();\n`
+      code += `void imp${i};\n`
       i++
     }
     return code
@@ -66,53 +64,29 @@ export const iife = (p: IifeOptions) => {
 
   return {
     name: 'pingid:iife',
-    enforce: 'pre',
-    async config(c) {
-      if (!c.build) c.build = {}
-      if (!c.build.rolldownOptions) c.build.rolldownOptions = {}
-      if (!c.build.rolldownOptions.input) c.build.rolldownOptions.input = {}
-      if (typeof c.build.rolldownOptions.input === 'string')
-        c.build.rolldownOptions.input = [c.build.rolldownOptions.input, virtualEntryId]
-      else if (Array.isArray(c.build.rolldownOptions.input)) c.build.rolldownOptions.input.push(virtualEntryId)
-      else if (typeof c.build.rolldownOptions.input === 'object')
-        c.build.rolldownOptions.input[virtualEntryId] = virtualEntryId
-      else {
-      }
-    },
 
-    resolveId(id) {
-      if (id === virtualEntryId) return resolvedVirtualEntryId
-      if (id === `/@id/__x00__${virtualEntryId}` || id === `/__x00__${virtualEntryId}`) return resolvedVirtualEntryId
-      return undefined
-    },
+    config: (c) => mergeConfig(c ?? {}, { build: { rolldownOptions: { [dependencies.id]: dependencies.id } } }),
+    resolveId: dependencies.resolver(),
+    load: dependencies.loader(() => toFile()),
 
-    load(id) {
-      if (id === resolvedVirtualEntryId || id === virtualEntryId || id.includes(virtualEntryId)) return toFile()
-      return undefined
-    },
     async handleHotUpdate(ctx) {
-      const url = await resolveVirtualUrl(ctx.server, virtualEntryId)
-      const virtualMod = url ? await ctx.server.moduleGraph.getModuleByUrl(url) : undefined
-      if (!virtualMod) return console.warn('no virtual module for', url)
+      const virtualMod = await ctx.server.moduleGraph.getModuleByUrl(dependencies.url)
+      if (!virtualMod) return console.warn('no virtual module for', dependencies.url)
       const mods = Array.from(ctx.server.moduleGraph.getModulesByFile(ctx.file) ?? [])
-      console.log(
-        'handleHotUpdate',
-        ctx.file,
-        mods.map((m) => m.file),
-        Array.from(virtualMod.importedModules).map((m) => m.file),
-      )
       for (const p of virtualMod.importedModules) {
         for (const m of mods) {
           if (p.file === m.file || isDepOf(m, p)) {
-            console.log('hot', p)
             await hot(ctx.server, p)
-            return
+            return []
           }
         }
       }
       return
     },
     async configureServer(server) {
+      await entry(server, p.entry)
+      await server.transformRequest(p.entry)
+
       server.middlewares.use(async (req, res, next) => {
         if (!req.url) return next()
 

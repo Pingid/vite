@@ -3,7 +3,7 @@
     /* Language and Environment */
     "target": "es2022",
     "lib": ["DOM", "ESNext"],
-    "types": ["vite/client"],
+    "types": ["vite/client", "./types.d.ts"],
 
     /* Modules */
     "module": "NodeNext" /* Specify what module code is generated. */,

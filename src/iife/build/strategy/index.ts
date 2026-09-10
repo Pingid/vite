@@ -1,4 +1,4 @@
-import type { ServerHook } from 'vite'
+import type { IndexHtmlTransformHook, ServerHook } from 'vite'
 import path from 'node:path'
 
 import { HOT_ATTACHED, SSE_HEADER_NAME, SSE_HOT_EVENT } from '../const.ts'
@@ -11,6 +11,7 @@ export type Strategy = (
   inject: Injecter
   imported: () => string[]
   handler?: ServerHook
+  transformIndexHtml?: IndexHtmlTransformHook
 }
 
 export type Register = (update: (data: SSE_HOT_EVENT) => void) => () => void
@@ -23,12 +24,15 @@ export const sse =
         const name = req.headers[SSE_HEADER_NAME]
         if (typeof name !== 'string') return next()
 
+        console.log('sse', { name })
         res.setHeader('Content-Type', 'text/event-stream')
         res.setHeader('Cache-Control', 'no-cache')
         res.setHeader('Connection', 'keep-alive')
         res.setHeader('X-Accel-Buffering', 'no')
         res.statusCode = 200
         req.socket.setKeepAlive(true)
+
+        console.log('sse', name)
 
         const stop = register((data) => {
           if (data.target === name) res.write(`data: ${JSON.stringify(data)}\n\n`)
@@ -47,7 +51,27 @@ export const hot =
   (name = '___hotrun_sse___'): Strategy =>
   (entry, register) => {
     const b = base(entry, (x) => `${x}.hot('${name}')`)
-    return { ...b, handler: (server) => register((data) => server.hot.send(name, data)) }
+    return {
+      ...b,
+      handler: (server) =>
+        register((data) => {
+          server.hot.send({ type: 'custom', event: name, data: data })
+        }),
+      transformIndexHtml: () => [
+        {
+          tag: 'script',
+          attrs: { type: 'module' },
+          children: `
+            if (import.meta.hot) {
+              import.meta.hot.on('${name}', (data) => {
+                console.log('hotter', data)
+              })
+            }
+          `,
+          injectTo: 'body', // 'head' | 'body' | 'head-prepend' | 'body-prepend'
+        },
+      ],
+    }
   }
 
 const base = (entry: string, fn: (x: string) => string) => {

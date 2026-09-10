@@ -14,9 +14,15 @@ importers:
       '@babel/traverse':
         specifier: ^8.0.4
         version: 8.0.4
+      '@lickle/lock':
+        specifier: ^0.0.1
+        version: 0.0.1
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
+      jiti:
+        specifier: ^2.7.0
+        version: 2.7.0
     devDependencies:
       '@types/node':
         specifier: ^26.5.0
@@ -29,7 +35,7 @@ importers:
         version: 7.0.2
       vite:
         specifier: ^8.2.2
-        version: 8.2.2(@types/node@26.5.0)(esbuild@0.28.2)
+        version: 8.2.2(@types/node@26.5.0)(esbuild@0.28.2)(jiti@2.7.0)
 
 packages:
 
@@ -238,6 +244,35 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@lickle/lock-darwin-arm64@0.0.1':
+    resolution: {integrity: sha512-Lj3lgKS3AOhjCVPpLKAHTyQlhz6vOQVyw0WE0gSpxpfS7cvQ65zGHCKk/dl5jcoPXSNIxIWBKEJciQ0cP7wzYg==}
+    engines: {node: '>= 6.14.2 < 7 || >= 8.11.2 < 9 || >= 9.11.0 < 10 || >= 10.0.0'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@lickle/lock-darwin-x64@0.0.1':
+    resolution: {integrity: sha512-lTPq1BYQ4mUAXKtOUnAt3DOIBikFRP4gXC9sPaSGCFD+C1HZ0W6llWH/jXx7BkeFa8EiJdpGOvdgh9LPoDkeDA==}
+    engines: {node: '>= 6.14.2 < 7 || >= 8.11.2 < 9 || >= 9.11.0 < 10 || >= 10.0.0'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@lickle/lock-linux-x64-gnu@0.0.1':
+    resolution: {integrity: sha512-jIZj9okXMOINtJ3jm26rQfJezW25wsZL37vOqz2c32TAXE8yplmNtfyWbOUpUXQeFTkWJPl98qM9hdhbLo8Uew==}
+    engines: {node: '>= 6.14.2 < 7 || >= 8.11.2 < 9 || >= 9.11.0 < 10 || >= 10.0.0'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@lickle/lock-win32-x64-msvc@0.0.1':
+    resolution: {integrity: sha512-3rdhYJuTFx7w21rwyPokVPEm1aGA63iA5Gp8C/WkOqmi1fGdpu3VGtXbvrH1SoDvPzHi9Iccm3CrUXtj/Hcq3A==}
+    engines: {node: '>= 6.14.2 < 7 || >= 8.11.2 < 9 || >= 9.11.0 < 10 || >= 10.0.0'}
+    cpu: [x64]
+    os: [win32]
+
+  '@lickle/lock@0.0.1':
+    resolution: {integrity: sha512-PkpWvEDUoVm7wnovDnUzZKUHuQxFyNZoOx2t+lgrYCXVTksnazCvteryeZpQ8dRpe5taLTvktXNbCKsU82+yPQ==}
+    engines: {node: '>= 6.14.2 < 7 || >= 8.11.2 < 9 || >= 9.11.0 < 10 || >= 10.0.0'}
 
   '@oxc-project/types@0.148.0':
     resolution: {integrity: sha512-Nm4s/jB+4FpFsPhWGEC4h7rzksesmtnMXomo6rCMcg/b8zLQuOziRgkCS1fxDCXOlJB/6Q8oABOZ/OP6RIPj9A==}
@@ -489,6 +524,10 @@ packages:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
+
+  jiti@2.7.0:
+    resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
+    hasBin: true
 
   js-tokens@10.0.0:
     resolution: {integrity: sha512-lM/UBzQmfJRo9ABXbPWemivdCW8V2G8FHaHdypQaIy523snUjog0W71ayWXTjiR+ixeMyVHN2XcpnTd/liPg/Q==}
@@ -800,6 +839,25 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
+  '@lickle/lock-darwin-arm64@0.0.1':
+    optional: true
+
+  '@lickle/lock-darwin-x64@0.0.1':
+    optional: true
+
+  '@lickle/lock-linux-x64-gnu@0.0.1':
+    optional: true
+
+  '@lickle/lock-win32-x64-msvc@0.0.1':
+    optional: true
+
+  '@lickle/lock@0.0.1':
+    optionalDependencies:
+      '@lickle/lock-darwin-arm64': 0.0.1
+      '@lickle/lock-darwin-x64': 0.0.1
+      '@lickle/lock-linux-x64-gnu': 0.0.1
+      '@lickle/lock-win32-x64-msvc': 0.0.1
+
   '@oxc-project/types@0.148.0': {}
 
   '@rolldown/binding-android-arm-eabi@1.2.7':
@@ -953,6 +1011,8 @@ snapshots:
   fsevents@2.3.3:
     optional: true
 
+  jiti@2.7.0: {}
+
   js-tokens@10.0.0: {}
 
   jsesc@3.1.0: {}
@@ -1075,7 +1135,7 @@ snapshots:
 
   undici-types@8.9.0: {}
 
-  vite@8.2.2(@types/node@26.5.0)(esbuild@0.28.2):
+  vite@8.2.2(@types/node@26.5.0)(esbuild@0.28.2)(jiti@2.7.0):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
@@ -1086,3 +1146,4 @@ snapshots:
       '@types/node': 26.5.0
       esbuild: 0.28.2
       fsevents: 2.3.3
+      jiti: 2.7.0
