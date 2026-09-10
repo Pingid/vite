@@ -1,97 +1,76 @@
-import { type ModuleNode, type Plugin, type ViteDevServer } from 'vite'
+export type Namespace<K extends string, F extends Record<string, string> = {}> = {
+  id: K
+  files: F
+  encoded: `\0${K}`
 
-export const isDepOf = (
-  currentMod: ModuleNode | undefined,
-  ancestorMod: ModuleNode,
-  visited = new Set<ModuleNode>(),
-): boolean => {
-  if (!currentMod || visited.has(currentMod)) return false
-  visited.add(currentMod)
-  for (const importer of currentMod.importers) {
-    if (importer === ancestorMod) return true
-    if (isDepOf(importer, ancestorMod, visited)) return true
+  match<T>(id: string, fn: (match: NameMatch<Namespace<K, F>, keyof F | Unknown>) => T): T | null
+  name(id: `${K}:${string}` | `\0${K}:${string}`): string
+  includes(name: string): name is `${K}:${string}` | `\0${K}:${string}`
+  unknown<N extends string>(name: N): UnknownMatch<Namespace<K, F>>
+} & Known<K, F>
+
+export const namespace = <K extends string, F extends Record<string, string> = {}>(
+  id: K,
+  files: F = {} as F,
+): Namespace<K, F> => {
+  const encoded = `\0${id}`
+  const ns = { id, files, encoded } as Namespace<any, any>
+
+  ns.includes = (name): name is any => {
+    if (name[0] === '\0') return name.startsWith(encoded + ':')
+    return name.startsWith(id + ':')
   }
-  return false
+
+  ns.name = (id) => {
+    if (id[0] === '\0') return id.slice(ns.encoded.length + 1)
+    return id.slice(ns.id.length + 1)
+  }
+
+  ns.match = (id, fn) => {
+    if (ns.includes(id)) return fn(makeMatch(ns, ns.name(id)))
+    return null
+  }
+
+  ns.unknown = (name) => ({ kind: 'unknown', name, id: `${id}:${name}`, encoded: `\0${id}:${name}` })
+
+  Object.entries(files).forEach(([fllabel, flId]) => {
+    ns[fllabel] = { id: `${id}:${flId}`, encoded: `\0$${id}:${flId}` } as any
+  })
+
+  return ns as any
 }
 
-export const resolveVirtualUrl = async (server: ViteDevServer, virtualId: string): Promise<string | undefined> => {
-  const resolved = await server.pluginContainer.resolveId(virtualId)
-  if (!resolved) return undefined
-  return resolved.id.startsWith('\0') ? `/@id/__x00__${resolved.id.slice(1)}` : resolved.id
+const makeMatch = (ns: Namespace<any, any>, name: string): KnownMatch<any, any> | UnknownMatch<any> => {
+  const id = `${ns.id}:${name}`
+  const base = { name, id, encoded: `\0${id}` }
+  const matched = [...Object.entries(ns.files)].find(([, flId]) => flId === name)
+  if (matched) return { ...base, kind: matched[0] } as any
+  return { ...base, kind: 'unknown' } as any
 }
 
-// type Virtual = { id: string; resolved: string; url: string }
+type Known<K extends string, F extends Record<string, string>> = {
+  [N in keyof F]: { id: `${K}:${N & string}`; encoded: `\0${K}:${N & string}` }
+}
+// type Named<K extends string, N extends string> =
 
-export const virtual = (name: string) => {
-  const id = `virtual:${name}`
-  const resolved = '\0' + id
-  const url = `/@id/__x00__${id}`
-  const resolver = (
-    cb: (c: PluginContext, source: string, importer: string | undefined) => ResolveIdResult = (_, s) =>
-      s.endsWith(id) ? resolved : undefined,
-    or?: (c: PluginContext, source: string, importer: string | undefined) => ResolveIdResult,
-  ): Plugin['resolveId'] =>
-    function (this: PluginContext, source: string, importer: string | undefined) {
-      const result = cb(this, source, importer)
-      if (result !== undefined) return result
-      return or?.(this, source, importer)
-    }
-  const loader = (
-    cb: (c: PluginContext) => LoadResult,
-    or?: (c: PluginContext, id: string) => LoadResult,
-  ): Extract<Plugin['load'], Function> =>
-    function (this, id) {
-      if (id === resolved) {
-        const result = cb(this)
-        if (result !== undefined) return result
-      }
-      return or?.(this, id)
-    }
-  return { id, resolved, url, resolver, loader } as const
+type Unknown = string & { __brand: 'unknown' }
+
+// type IdMatch<N extends Namespace<any, any>, F extends keyof N['files'] | Unknown = keyof N['files'] | Unknown> = F extends Unknown
+type NameMatch<
+  N extends Namespace<any, any>,
+  F extends keyof N['files'] | Unknown = keyof N['files'] | Unknown,
+> = F extends Unknown ? UnknownMatch<N> : KnownMatch<N, F>
+
+interface KnownMatch<N extends Namespace<any, any>, F extends keyof N['files']> {
+  kind: F
+  name: F
+  id: `${N['id']}:${N['files'][F]}`
+  encoded: `\0${N['id']}:${N['files'][F]}`
 }
 
-// export const resolver = <
-
-type PluginContext = ThisParameterType<Extract<Plugin['resolveId'], Function>>
-type LoadResult = ReturnType<Extract<Plugin['load'], Function>>
-type ResolveIdResult = ReturnType<Extract<Plugin['resolveId'], Function>>
-
-// export function myHmrPlugin(name = 'custom-event'): Plugin {
-//   const virtualId = 'virtual:my-hmr-client'
-//   const resolvedVirtualId = '\0' + virtualId
-
-//   return {
-//     name: 'my-hmr-listener',
-
-//     resolveId(id) {
-//       if (id === virtualId) return resolvedVirtualId
-//     },
-
-//     load(id) {
-//       if (id === resolvedVirtualId) {
-//         // Here Vite transforms the module and properly populates import.meta.hot
-//         return `
-//           if (import.meta.hot) {
-//             import.meta.hot.on('${name}', (data) => {
-//               console.log('hotter', data)
-//             })
-//           }
-//         `
-//       }
-//     },
-
-//     transformIndexHtml() {
-//       return [
-//         {
-//           tag: 'script',
-//           attrs: {
-//             type: 'module',
-//             // Use Vite's dev-server ID format so the browser requests it as a module
-//             src: `/@id/__x00__${virtualId}`,
-//           },
-//           injectTo: 'body',
-//         },
-//       ]
-//     },
-//   }
-// }
+interface UnknownMatch<N extends Namespace<any, any>> {
+  kind: 'unknown'
+  name: string
+  id: `${N['id']}:${string}`
+  encoded: `\0${N['id']}:${string}`
+}

@@ -1,56 +1,66 @@
+/// <reference path="./ambient.d.ts" />
+
 import type { VirtualModule } from '@pingid/vite/types'
-import './types.ts'
+import { mods } from 'virtual:@pingid/vite/manifest'
 
-export type Run = {
-  <K extends keyof VirtualModule>(key: K, cb: (module: VirtualModule[K]) => () => void): VirtualMod<VirtualModule[K]>
-  <K extends keyof VirtualModule, T extends (keyof VirtualModule[K])[]>(
-    key: K,
-    exports: T,
-    cb: (module: Pick<VirtualModule[K], T[number]>) => () => void,
-  ): VirtualMod<Pick<VirtualModule[K], T[number]>>
+import type { Callback, Dispose, Register } from './runtime.ts'
+
+/** `string` until the generated declaration augments `VirtualModule`. */
+export type Key = keyof VirtualModule extends never ? string : keyof VirtualModule
+type Mod<K> = K extends keyof VirtualModule ? VirtualModule[K] : Record<string, any>
+
+export const run: <K extends Key>(key: K, cb: Callback<Mod<K>>) => VirtualMod<Mod<K>> = (
+  key: string,
+  cb: Callback<any>,
+): any => {
+  const entry = mods[key]
+  if (!entry) throw new Error(`[@pingid/vite] no virtual module registered for "${key}"`)
+  return new VirtualMod(key, entry.load, cb)
 }
 
-export const run: Run = <K extends keyof VirtualModule>(
-  key: K,
-  cbore: (module: VirtualModule[K]) => () => void,
-  cb?: any,
-): VirtualMod<K> => {
-  if (typeof cbore !== 'function') {
-    return new VirtualMod<K>(import(/* @vite-ignore */ `./virtual:${key}?exports=${(cbore as any).join(',')}`), cb)
-  }
-  return new VirtualMod<K>(import(/* @vite-ignore */ `./virtual:${key}`), cbore)
-}
+export type Resolved<T> = T
 
-type Resolved<T> = { mod: T; file: string }
-
-class VirtualMod<T extends Record<string, any>> {
+export class VirtualMod<T> {
   private def = defer<Resolved<T>>()
+  private stop: Dispose = () => {}
   private disposed = false
-  private stop = () => {}
   public resolved: Resolved<T> | null = null
 
   constructor(
-    mod: Promise<any>,
-    private cb: (module: T) => () => void,
+    private key: string,
+    load: () => Promise<{ register: Register<T> }>,
+    private cb: Callback<T>,
   ) {
-    mod.then(
+    const resolve = (mod: Resolved<T>) => {
+      this.resolved = mod
+      this.def.resolve(this.resolved)
+      return this.cb(mod)
+    }
+
+    load().then(
       (m) => {
         if (this.disposed) return
-        this.stop = (m as any).register((m: any) => this.handle(m))
-        this.resolve(m)
+        this.stop = m.register((mod) => resolve(mod))
       },
-      (e) => this.def.reject(e),
+      (e) => this.def.reject(e instanceof Error ? e : new Error(String(e))),
     )
+  }
+
+  then<R = Resolved<T>>(
+    onfulfilled: (value: Resolved<T>) => R = (x) => x as unknown as R,
+    onrejected: (reason: any) => void = console.error,
+  ) {
+    return this.def.promise.then(onfulfilled, onrejected)
   }
 
   dispose() {
     if (this.disposed) return
     this.disposed = true
     this.stop()
-  }
-
-  wait() {
-    return this.def.promise
+    this.stop = () => {}
+    if (this.resolved) return
+    this.def.reject(new Error(`[@pingid/vite] "${this.key}" disposed before it loaded`))
+    this.def.promise.catch(() => {}) // nobody may be awaiting wait()
   }
 
   [Symbol.dispose]() {
@@ -58,30 +68,15 @@ class VirtualMod<T extends Record<string, any>> {
   }
 
   async [Symbol.asyncDispose]() {
-    if (this.disposed) return Promise.resolve()
-    await this.wait()
-    this.dispose()
-    return
-  }
-
-  private handle(m: any) {
-    if (this.disposed) return () => {}
-    return this.cb(m)
-  }
-
-  private resolve(m: any) {
     if (this.disposed) return
-    this.resolved = { mod: m.mod, file: (m as any).file }
-    this.def.resolve(this.resolved)
+    await this.def.promise.catch(() => {})
+    this.dispose()
   }
 }
 
 export const defer = <T>() => {
-  let res: (value: T) => void
-  let rej: (error: Error) => void
-  const promise = new Promise<T>((resolve, reject) => {
-    res = (v) => resolve(v)
-    rej = (e) => reject(e)
-  })
+  let res!: (value: T) => void
+  let rej!: (error: Error) => void
+  const promise = new Promise<T>((resolve, reject) => ((res = resolve), (rej = reject)))
   return { promise, resolve: (v: T) => res(v), reject: (e: Error) => rej(e) }
 }

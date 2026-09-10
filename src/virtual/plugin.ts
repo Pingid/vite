@@ -1,155 +1,167 @@
-import { type Plugin, type UserConfig } from 'vite'
-import { Lock, openLock } from '@lickle/lock'
-import path from 'path'
-import fs from 'fs'
+import type { Plugin } from 'vite'
+import path from 'node:path'
 
-export const virtual = (modules: Record<string, string>, _p?: { types?: string }): Plugin => {
-  const dir = import.meta.dirname
+import { namespace } from '../_util/vite.ts'
+import { Jitt } from '../_util/shared.ts'
+import { File } from '../_util/file.ts'
 
-  const mods = Object.entries(modules).map(([key, value]) => {
-    const file = path.resolve(value)
-    const id = path.resolve(dir, `virtual:${key}`)
-    return { key, file, id, resolved: '\0' + id }
-  })
+const NS = namespace('virtual', { manifest: '@pingid/vite/manifest' })
 
-  const types_file = path.resolve(dir, `./types.d.ts`)
-  const clearing = (async () => {
-    await using guard = await openLock(types_file, Lock.Exclusive)
-    await guard.handle.truncate(0)
-  })()
+export type Modules = Record<string, string | VirtualModule>
 
-  let isDev = false
+export type VirtualModule = { file: string; exports?: string[] }
+
+/**
+ * How application code addresses a key. Both styles share one wrapper, one
+ * runtime and one HMR path — they differ only in how a key is reached and typed.
+ *
+ * - `manifest` — keys are values. The plugin emits a manifest module the client
+ *   reads, so `run('key', cb)` takes the key at runtime. Types land on the
+ *   `VirtualModule` interface in `@pingid/vite/types`.
+ * - `module` — keys are import specifiers. `import { register } from 'virtual:key'`
+ *   resolves statically, with no manifest and no client. Types land on an ambient
+ *   declaration per key.
+ */
+export type Style = 'manifest' | 'module'
+
+export interface VirtualOptions {
+  /** How keys are addressed from application code. Default `manifest`. */
+  style?: Style
+  /** Package name of this library, excluded from dep optimisation. Default `@pingid/vite`. */
+  pkg?: string
+  /** Where to write the ambient declaration, relative to vite root. `false` to skip. Default `src/virtual.d.ts`. */
+  types?: string | false
+}
+
+export const virtual = (modules: Modules, options: VirtualOptions = {}): Plugin => {
+  const pkg = options.pkg ?? '@pingid/vite'
+  const style = options.style ?? 'manifest'
+
+  const mods = new Map<string, Mod>(
+    Object.entries(modules).map(([key, input]) => {
+      const it = typeof input === 'string' ? { file: input, exports: undefined } : input
+      return [key, { ...it, key, file: path.resolve(it.file) }]
+    }),
+  )
 
   return {
     name: 'pingid:virtual',
-    config: (c, env) => {
-      if (env.mode === 'development') isDev = true
-      if (isDev) return c
-      const fls = Object.fromEntries(mods.map((m) => [m.key, `./${path.relative(c.root ?? process.cwd(), m.file)}`]))
-      const conf: UserConfig = {
-        ...c,
-        define: { ...c.define, 'import.meta.env.VITE_VIRTUAL': JSON.stringify(fls) },
-        resolve: {
-          ...c.resolve,
-          alias: { '@pingid/vite/virtual': path.resolve(dir, `./client-build.js`) },
-        },
-        build: {
-          ...c.build,
-          rolldownOptions: {
-            ...c.build?.['rolldownOptions'],
-            input: mergeInput(
-              c?.build?.['rolldownOptions']?.input,
-              Object.fromEntries(mods.map((m) => [`virtual_${m.key}`, m.file])),
-            ),
-            output: {
-              preserveModules: true,
-            },
-          },
-        },
-      }
+    enforce: 'pre',
 
-      return conf
+    config: () => ({
+      optimizeDeps: { exclude: [pkg] },
+      ssr: { noExternal: [pkg] },
+      resolve: { alias: { '@pingid/vite/virtual/runtime': File.project(import.meta, './runtime.ts').path } },
+    }),
+
+    configResolved: async (config_) => {
+      if (options.types === false) return
+      const file = File.for(config_.root, options.types ?? 'src/virtual.d.ts')
+      await file.write(build_decls(style, [...mods.values()], file.dir))
     },
 
-    configResolved: async (c) => {
-      await clearing
-      await fs.promises.appendFile(types_file, `${typeDecls(mods)}\n\n`)
+    resolveId: {
+      order: 'pre',
+      handler(id) {
+        return NS.match(id, (m) => {
+          if (m.kind === 'manifest') {
+            if (style === 'manifest') return m.encoded
+            return this.error(
+              `"@pingid/vite/virtual" needs the manifest, which is only emitted with \`style: 'manifest'\` — ` +
+                `under \`style: 'module'\` import a key directly, e.g. \`import { register } from "${NS.unknown([...mods.keys()][0] ?? 'key').id}"\``,
+            )
+          }
+          if (mods.has(m.name)) return m.encoded
+          return this.error(
+            `unknown virtual module "${m.name}" — known keys: ${[...mods.keys()].join(', ') || '(none)'}`,
+          )
+        })
+      },
     },
-    resolveId: (id) => {
-      console.log('resolveId', id)
-      if (!isDev) {
-        const mod = mods.find((m) => id.includes(m.file))
-        return mod?.file ?? id
-      }
-      const mod = mods.find((m) => id.includes(m.id))
-      if (!mod) return null
-      const qry = id.split('?')[1]
-      return `${mod.resolved}${qry ? `?${qry}` : ''}`
-    },
-    load: (id) => {
-      const mod = mods.find((m) => (isDev ? id.includes(m.id) : id.includes(m.file)))
-      if (!mod) return null
-      const qry = new URLSearchParams(id.split('?')[1])
-      const exp = qry.get('exports')?.split(',')
 
-      const w = writer()
-
-      if (!exp || exp.length === 0) w.ln(`import * as mod from '${mod.file}'`, `export * as mod from '${mod.file}'`)
-      else w.ln(`import { ${exp.join(', ')} } from '${mod.file}'`, `export const mod = { ${exp.join(', ')} }`)
-      w.ln(`export const register = (${runner.toString()})(mod)`)
-      return w.toString()
+    async load(id) {
+      return NS.match(id, async (m) => {
+        if (m.kind === 'manifest') return build_manifest([...mods.values()])
+        const mod = mods.get(m.name)
+        return mod ? build_wrapper(mod) : null
+      })
     },
   }
 }
 
-type Cb = (mod: Md) => () => void
-type Md = { mod: any; register: (cb: Cb) => () => void; run: () => void }
+type Mod = { key: string } & VirtualModule
 
-const runner = (mod: Md) => {
-  let reg = new Map<Cb, () => void>()
-
-  const register = (cb: Cb) => {
-    const cb_ = (mod: Md) => cb(mod)
-    reg.set(cb_, cb_(mod))
-    return () => (reg.get(cb_)?.(), reg.delete(cb_))
-  }
-
-  if (import.meta.hot) {
-    import.meta.hot.accept((_md: any) => {
-      const md = _md as Md | undefined
-      if (!md?.mod) return
-      const dis = [...reg.entries()]
-      reg.clear()
-      for (const [cb, d] of dis) (d(), md.register(cb))
+const build_manifest = (mods: Mod[]) => {
+  const w = Jitt.create()
+  w.ln('export const mods =')
+  w.fields((f) => {
+    mods.forEach((m) => {
+      f(m.key, () => {
+        w.fields((f) => {
+          f('exports', m.exports ? `[${m.exports.map(Jitt.str).join(', ')}]` : 'null')
+          f('load', `() => import(${Jitt.str(NS.unknown(m.key).id)})`)
+        })
+      })
     })
-  }
-
-  return register
-}
-
-const typeDecls = (mods: { key: string; file: string }[]) => {
-  const w = writer()
-  w.ln("declare module '@pingid/vite/types'")
-  w.block(() => {
-    w.ln('export interface VirtualModule')
-    w.block(() => mods.forEach((p) => w.ln(`${p.key}: typeof import('${p.file}');`)))
   })
   return w.toString()
 }
 
-const writer = () => {
-  const lns: string[] = []
-  let indent = 0
-  return {
-    ln: (...ln: string[]) => ln.forEach((l) => lns.push(' '.repeat(indent) + l)),
-    block: (cb: () => void) => {
-      lns[lns.length - 1] += ' {'
-      indent += 2
-      cb()
-      indent -= 2
-      lns.push(' '.repeat(indent) + '}')
-    },
-    toString: () => lns.join('\n'),
-  }
+const build_wrapper = (m: Mod) => {
+  const spec = Jitt.str(m.file.replaceAll('\\', '/'))
+  const w = Jitt.create()
+  w.ln("import { create } from '@pingid/vite/virtual/runtime'")
+
+  if (m.exports) {
+    w.ln(`import { ${m.exports.join(', ')} } from ${spec}`)
+    w.ln(`const mod = { ${m.exports.join(', ')} }`)
+    w.ln('export { mod }')
+  } else w.ln(`import * as mod from ${spec}`, 'export { mod }')
+
+  w.ln('const { register, accept } = create(mod, import.meta?.hot)')
+  w.ln('export { register }')
+
+  w.ln('if (import.meta.hot)')
+  w.block(() => {
+    w.ln('import.meta.hot.accept((newModule) =>')
+    w.block(() => {
+      w.ln(`newModule && accept(newModule)`)
+    })
+    w.ln(')')
+  })
+
+  return w.toString()
 }
 
-const mergeInput = (existingInput?: any, dynamicInputs?: Record<string, string>) => {
-  let mergedInput: Record<string, string> | undefined = undefined
-  if (!existingInput) {
-    // Fallback if user didn't define any inputs
-    mergedInput = dynamicInputs
-  } else if (typeof existingInput === 'string') {
-    // If user defined a single string entry
-    mergedInput = { main: existingInput, ...dynamicInputs }
-  } else if (Array.isArray(existingInput)) {
-    // If user defined an array of entries, convert to rollup object format
-    mergedInput = {
-      ...Object.fromEntries(existingInput.map((item, index) => [`entry_${index}`, item])),
-      ...dynamicInputs,
-    }
+const build_decls = (style: Style, mods: Mod[], dir: string) => {
+  const w = Jitt.create()
+  w.ln('// Generated by @pingid/vite. Do not edit.')
+
+  if (style === 'manifest') {
+    w.ln("declare module '@pingid/vite/types'")
+    w.block(() => {
+      w.ln('export interface VirtualModule')
+      w.block(() => mods.forEach((m) => w.ln(`${Jitt.str(m.key)}: ${modType(m, dir)}`)))
+    })
   } else {
-    // If user defined an object map of entries
-    mergedInput = { ...existingInput, ...dynamicInputs }
+    mods.forEach((m) => {
+      w.ln(`declare module ${Jitt.str(NS.unknown(m.key).id)}`)
+      w.block(() => {
+        w.ln(`export type Mod = ${modType(m, dir)}`)
+        w.ln('export const mod: Mod')
+        w.ln('export const register: (cb: (mod: Mod) => (() => void) | void) => () => void')
+      })
+    })
   }
-  return mergedInput
+
+  return `${w.toString()}\n`
+}
+
+const modType = (mod: Mod, dir: string) => {
+  const rel = path
+    .relative(dir, mod.file)
+    .replaceAll('\\', '/')
+    .replace(/\.[mc]?tsx?$/, '')
+  const t = `typeof import(${Jitt.str(rel.startsWith('.') ? rel : `./${rel}`)})`
+  return mod.exports ? `Pick<${t}, ${mod.exports.map(Jitt.str).join(' | ')}>` : t
 }

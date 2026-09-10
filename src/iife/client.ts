@@ -1,24 +1,18 @@
-import { HOT_ATTACHED } from './build/const.ts'
+import { PING } from './runtime.ts'
 
-export const $hot = <M extends Promise<Record<string, any>>>(m: M, cb: (m: Awaited<M>) => () => void) => {
-  let disposed = false
-
-  let last = (): void => {}
-
-  const run = (x: Awaited<M>) => {
-    if (disposed) return
-    last()
-    last = cb(x)
-  }
-
-  m.then(async (c) => {
-    run(c as any)
-    if (typeof (c as any)[HOT_ATTACHED] === 'function') (c as any)[HOT_ATTACHED]((x: any) => run(x))
+/**
+ * Nudges the worker registered from `url`'s script to pull the current build.
+ *
+ * `message` is a functional event, so it revives a dormant worker — which is
+ * why the page relaying vite's own HMR beats the worker holding a stream open:
+ * the browser terminates an idle worker within seconds, taking any stream with
+ * it. Never reached in a build.
+ */
+export const ping = (hot: string): void => {
+  const container = globalThis.navigator?.serviceWorker
+  if (!container) return
+  void container.ready.then((reg) => {
+    const worker = reg.active ?? reg.waiting ?? reg.installing
+    worker?.postMessage({ [PING]: hot })
   })
-
-  return () => {
-    disposed = true
-    last()
-    last = (): void => {}
-  }
 }

@@ -23,31 +23,6 @@
       "import": "./dist/plugin.js",
       "ts": "./src/plugin.ts"
     },
-    "./client": {
-      "types": "./dist/client.d.ts",
-      "import": "./dist/client.js",
-      "ts": "./src/client.ts"
-    },
-    "./iife": {
-      "types": "./dist/iife/client.d.ts",
-      "import": "./dist/iife/client.js",
-      "ts": "./src/iife/client.ts"
-    },
-    "./sw": {
-      "types": "./dist/sw/index.d.ts",
-      "import": "./dist/sw/index.js",
-      "ts": "./src/sw/index.ts"
-    },
-    "./sw/worker": {
-      "types": "./dist/sw/worker.d.ts",
-      "import": "./dist/sw/worker.js",
-      "ts": "./src/sw/worker.ts"
-    },
-    "./sw/client": {
-      "types": "./dist/sw/client.d.ts",
-      "import": "./dist/sw/client.js",
-      "ts": "./src/sw/client.ts"
-    },
     "./types": {
       "types": "./types.d.ts"
     },
@@ -55,6 +30,16 @@
       "types": "./dist/virtual/client.d.ts",
       "import": "./dist/virtual/client.js",
       "ts": "./src/virtual/client.ts"
+    },
+    "./server/node": {
+      "types": "./dist/server/node.d.ts",
+      "import": "./dist/server/node.js",
+      "ts": "./src/server/node.ts"
+    },
+    "./plugin/*": {
+      "types": "./dist/*/plugin.d.ts",
+      "import": "./dist/*/plugin.js",
+      "ts": "./src/*/plugin.ts"
     }
   },
   "files": [
@@ -80,8 +65,6 @@
     "prepublishOnly": "pnpm build"
   },
   "dependencies": {
-    "@babel/parser": "^8.0.4",
-    "@babel/traverse": "^8.0.4",
     "@lickle/lock": "^0.0.1",
     "esbuild": "^0.28.2",
     "jiti": "^2.7.0"

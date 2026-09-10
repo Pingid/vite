@@ -3,6 +3,7 @@ dist
 .npmrc
 .bench-cache
 .vscode
+.temp
 
 # No dependencies so no lock file requirement
 package-lock.json
